@@ -1,0 +1,47 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: bmw
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bmw_dev_password}
+      POSTGRES_DB: bmw
+    ports:
+      - "${POSTGRES_PORT:-5440}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bmw -d bmw"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_PORT:-6390}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    environment:
+      NODE_ENV: development
+      PORT: 4000
+      DATABASE_URL: postgres://bmw:${POSTGRES_PASSWORD:-bmw_dev_password}@postgres:5432/bmw
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-real-deployments-please-32chars}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173}
+    ports:
+      - "${API_PORT:-4100}:4000"
+    command: sh -c "node dist/db/migrate.js && node dist/server.js"
+
+volumes:
+  pgdata:

@@ -80,3 +80,85 @@ export async function dashboard(user: AuthUser, filters: DashboardFilters) {
   const scope = user.role === 'HOSPITAL_STAFF' ? (user.facilityId ?? undefined) : undefined;
   return cached('dash', { scope, filters }, config.dashboardCacheTtl, () => compute(scope, filters));
 }
+
+// ---------------------------------------------------------------------------
+// Operational metrics (Phase 14): durations and percentages computed from real timestamps
+// ---------------------------------------------------------------------------
+export interface OpsFilters {
+  from?: string;
+  to?: string;
+  facilityId?: string;
+}
+
+const HOURS = (a: string, b: string) => `EXTRACT(EPOCH FROM (${a} - ${b})) / 3600.0`;
+const round1 = (v: unknown) => (v === null || v === undefined ? null : Math.round(Number(v) * 10) / 10);
+
+async function computeOps(facilityScope: string | undefined, f: OpsFilters) {
+  const params: unknown[] = [];
+  const where: string[] = ['TRUE'];
+  const add = (sql: string, v: unknown) => {
+    params.push(v);
+    where.push(sql.replace('?', `$${params.length}`));
+  };
+  if (facilityScope) add('w.facility_id = ?', facilityScope);
+  else if (f.facilityId) add('w.facility_id = ?', f.facilityId);
+  if (f.from) add('w.generated_at >= ?', f.from);
+  if (f.to) add('w.generated_at <= ?', f.to);
+  const W = where.join(' AND ');
+  const one = async (sql: string) => (await pool.query(sql, params)).rows[0];
+
+  const [col, tr, disp, life, perFacility] = await Promise.all([
+    one(`SELECT avg(${HOURS('c.collected_at', 'c.requested_at')}) FILTER (WHERE c.status = 'COMPLETED') AS avg_h,
+                count(*) FILTER (WHERE c.status = 'COMPLETED')::int AS completed,
+                count(*) FILTER (WHERE c.status <> 'CANCELLED')::int AS total
+         FROM collection_records c JOIN waste_records w ON w.id = c.waste_id WHERE ${W}`),
+    one(`SELECT avg(${HOURS('t.actual_arrival_at', 't.departed_at')}) FILTER (WHERE t.status = 'ARRIVED') AS avg_h,
+                count(*) FILTER (WHERE t.status = 'ARRIVED')::int AS arrived,
+                count(*) FILTER (WHERE t.status = 'ARRIVED' AND t.is_delayed)::int AS delayed
+         FROM transport_records t JOIN waste_records w ON w.id = t.waste_id WHERE ${W}`),
+    one(`SELECT avg(${HOURS('d.disposed_at', 't.actual_arrival_at')}) AS avg_h, count(*)::int AS n
+         FROM disposal_records d JOIN waste_records w ON w.id = d.waste_id
+         JOIN transport_records t ON t.waste_id = w.id AND t.status = 'ARRIVED' WHERE ${W}`),
+    one(`SELECT avg(${HOURS('w.closed_at', 'w.generated_at')}) AS avg_h, count(*)::int AS n
+         FROM waste_records w WHERE w.status = 'CLOSED' AND ${W}`),
+    pool
+      .query(
+        `SELECT fa.id, fa.name,
+                round(avg(${HOURS('c.collected_at', 'c.requested_at')}) FILTER (WHERE c.status = 'COMPLETED')::numeric, 1)::float AS "avgCollectionHours",
+                round(avg(${HOURS('t.actual_arrival_at', 't.departed_at')}) FILTER (WHERE t.status = 'ARRIVED')::numeric, 1)::float AS "avgTransportHours",
+                count(DISTINCT t.id) FILTER (WHERE t.status = 'ARRIVED')::int AS arrived,
+                count(DISTINCT t.id) FILTER (WHERE t.status = 'ARRIVED' AND t.is_delayed)::int AS delayed
+         FROM waste_records w JOIN facilities fa ON fa.id = w.facility_id
+         LEFT JOIN collection_records c ON c.waste_id = w.id
+         LEFT JOIN transport_records t ON t.waste_id = w.id
+         WHERE ${W} GROUP BY fa.id ORDER BY fa.name`,
+        params,
+      )
+      .then((r) => r.rows),
+  ]);
+
+  return {
+    avgCollectionHours: round1(col.avg_h),
+    avgTransportHours: round1(tr.avg_h),
+    avgDisposalTurnaroundHours: round1(disp.avg_h),
+    avgLifecycleHours: round1(life.avg_h),
+    collectionCompletionPct: col.total ? round1((col.completed / col.total) * 100) : null,
+    delayedTransportPct: tr.arrived ? round1((tr.delayed / tr.arrived) * 100) : null,
+    sample: { collections: col.total, completedCollections: col.completed, arrivedTransports: tr.arrived, delayedTransports: tr.delayed, disposals: disp.n, closedRecords: life.n },
+    byFacility: perFacility.map((r) => ({
+      id: r.id,
+      name: r.name,
+      avgCollectionHours: r.avgCollectionHours,
+      avgTransportHours: r.avgTransportHours,
+      arrivedTransports: r.arrived,
+      delayedTransports: r.delayed,
+      delayedPct: r.arrived ? round1((r.delayed / r.arrived) * 100) : null,
+    })),
+    generatedAt: new Date().toISOString(),
+  };
+}
+
+export async function operational(user: AuthUser, filters: OpsFilters) {
+  const scope = user.role === 'HOSPITAL_STAFF' ? (user.facilityId ?? undefined) : undefined;
+  return cached('ops', { scope, filters }, config.dashboardCacheTtl, () => computeOps(scope, filters));
+}

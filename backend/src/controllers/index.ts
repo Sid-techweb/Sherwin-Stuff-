@@ -8,6 +8,8 @@ import * as disposals from '../services/disposalService';
 import * as alerts from '../services/alertService';
 import * as analytics from '../services/analyticsService';
 import * as reference from '../services/referenceService';
+import * as assistant from '../ai/assistant';
+import * as aiMemory from '../ai/memory';
 import { pool } from '../db/pool';
 import { redis } from '../db/redis';
 import { created, ok } from '../utils/response';
@@ -108,6 +110,12 @@ export const dashboard = async (req: Request, res: Response) => {
   res.setHeader('X-Cache', cacheHit ? 'HIT' : 'MISS');
   ok(res, value, { cache: cacheHit ? 'HIT' : 'MISS' });
 };
+export const operationalMetrics = async (req: Request, res: Response) => {
+  const q = v.opsQuery.parse(req.query);
+  const { value, cacheHit } = await analytics.operational(me(req), q);
+  res.setHeader('X-Cache', cacheHit ? 'HIT' : 'MISS');
+  ok(res, value, { cache: cacheHit ? 'HIT' : 'MISS' });
+};
 export const facilities = async (_req: Request, res: Response) => ok(res, await reference.facilities());
 export const treatmentFacilities = async (_req: Request, res: Response) => ok(res, await reference.treatmentFacilities());
 export const vehicles = async (_req: Request, res: Response) => ok(res, await reference.vehicles());
@@ -127,3 +135,11 @@ export const health = async (_req: Request, res: Response) => {
   const status = !dbOk ? 'down' : redisOk ? 'ok' : 'degraded';
   res.status(dbOk ? 200 : 503).json({ success: dbOk, data: { status, database: dbOk, redis: redisOk, time: new Date().toISOString() } });
 };
+
+// ---------- AI assistant ----------
+export const aiChat = async (req: Request, res: Response) => {
+  const b = v.aiChatBody.parse(req.body);
+  ok(res, await assistant.ask(me(req), b.message, b.history));
+};
+export const aiStatus = async (_req: Request, res: Response) => ok(res, await assistant.status());
+export const aiMemories = async (_req: Request, res: Response) => ok(res, await aiMemory.ledger(50));

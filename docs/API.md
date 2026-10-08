@@ -44,6 +44,10 @@ Roles: **A**=ADMIN, **S**=HOSPITAL_STAFF, **C**=WASTE_COLLECTOR, **T**=TRANSPORT
 | `POST /alerts` | A,S,T | Manual `VEHICLE_ISSUE` / `SEGREGATION_PROBLEM` |
 | `PATCH /alerts/:id` | A,S,O | `{status:"ACKNOWLEDGED"|"RESOLVED"}` |
 | `POST /alerts/scan` | A | Run the rule scan now; `GET /alerts/scan/last` (A,U) |
+| `GET /analytics/operational` | A,U,S,O | Avg collection / transport / disposal-turnaround / lifecycle hours, delayed-transport %, collection completion %, per-facility breakdown. Filters `from,to,facilityId`; `X-Cache` header |
+| `POST /ai/chat` | A,U,S,O | `{message, history?}` -> `{answer, mode, sources[], memoriesUsed[], memoriesRetained[], warnings[]}`; rate-limited; tools run as the caller |
+| `GET /ai/status` | A,U,S,O | LLM configured?, Hindsight reachable?, tool list |
+| `GET /ai/memories` | A,U | The memory ledger (what the assistant has retained) |
 | `GET /analytics/dashboard` | A,U,S,O | Filters `from,to,facilityId,categoryId,status`; header `X-Cache: HIT|MISS` |
 | `GET /audit-logs` | A,U | `entity,entityId,action,userId,from,to,page,pageSize` (read-only) |
 

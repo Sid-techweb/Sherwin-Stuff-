@@ -57,6 +57,13 @@ router.patch('/alerts/:id', requireRole('ADMIN', 'HOSPITAL_STAFF', 'TREATMENT_OP
 
 // Analytics & audit
 router.get('/analytics/dashboard', requireRole('ADMIN', 'AUDITOR', 'HOSPITAL_STAFF', 'TREATMENT_OPERATOR'), h(c.dashboard));
+router.get('/analytics/operational', requireRole('ADMIN', 'AUDITOR', 'HOSPITAL_STAFF', 'TREATMENT_OPERATOR'), h(c.operationalMetrics));
 router.get('/audit-logs', requireRole('ADMIN', 'AUDITOR'), h(c.auditLogs));
+
+// AI assistant (same roles as the dashboard; tools run as the calling user so scoping still applies)
+const aiRoles = ['ADMIN', 'AUDITOR', 'HOSPITAL_STAFF', 'TREATMENT_OPERATOR'] as const;
+router.get('/ai/status', requireRole(...aiRoles), h(c.aiStatus));
+router.post('/ai/chat', requireRole(...aiRoles), rateLimit('ai', () => config.ai.rateLimitMax, config.rateLimit.windowSeconds), h(c.aiChat));
+router.get('/ai/memories', requireRole('ADMIN', 'AUDITOR'), h(c.aiMemories));
 
 export default router;

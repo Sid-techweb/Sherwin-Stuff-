@@ -11,6 +11,8 @@ import Alerts from './pages/Alerts';
 import AuditLogs from './pages/AuditLogs';
 import Facilities from './pages/Facilities';
 import Settings from './pages/Settings';
+import Analytics from './pages/Analytics';
+import Assistant from './pages/Assistant';
 
 export default function App() {
   const { user, loading } = useAuth();
@@ -37,6 +39,8 @@ export default function App() {
         <Route path="/collections" element={<Collections />} />
         <Route path="/transport" element={<Transport />} />
         <Route path="/disposals" element={<Disposals />} />
+        <Route path="/analytics" element={<Analytics />} />
+        <Route path="/assistant" element={<Assistant />} />
         <Route path="/alerts" element={<Alerts />} />
         <Route path="/audit" element={<AuditLogs />} />
         <Route path="/facilities" element={<Facilities />} />

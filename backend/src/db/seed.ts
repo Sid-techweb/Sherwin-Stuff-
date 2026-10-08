@@ -11,7 +11,7 @@ export const DEMO_PASSWORD = 'Demo@1234';
 const H = 3_600_000;
 
 export async function truncateAll(db: Db) {
-  await db.query(`TRUNCATE notifications, alerts, disposal_records, transport_records, collection_records,
+  await db.query(`TRUNCATE ai_memories, notifications, alerts, disposal_records, transport_records, collection_records,
     waste_status_history, waste_records, vehicles, waste_categories, users, treatment_facilities, facilities
     RESTART IDENTITY CASCADE`);
   // audit_logs is append-only by trigger; TRUNCATE bypasses row triggers, which is what we want for a dev reset.

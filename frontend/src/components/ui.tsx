@@ -60,8 +60,8 @@ const STATUS_TONE: Record<string, string> = {
   IN_USE: 'violet',
   MAINTENANCE: 'red',
 };
-export const Badge = ({ value, tone }: { value: string; tone?: string }) => (
-  <span className={`badge ${tone ?? STATUS_TONE[value] ?? 'slate'}`}>{pretty(value)}</span>
+export const Badge = ({ value, tone, raw }: { value: string; tone?: string; raw?: boolean }) => (
+  <span className={`badge ${tone ?? STATUS_TONE[value] ?? 'slate'}`}>{raw ? value : pretty(value)}</span>
 );
 
 // ---------- layout bits ----------

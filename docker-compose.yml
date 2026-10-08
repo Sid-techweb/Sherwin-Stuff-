@@ -32,16 +32,43 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
+    # Optional AI settings (LLM_PROVIDER, LLM_API_KEY, LLM_MODEL, HINDSIGHT_URL ...) are read from backend/.env
+    # when it exists; the values below always win for infrastructure wiring.
+    env_file:
+      - path: ./backend/.env
+        required: false
     environment:
       NODE_ENV: development
       PORT: 4000
       DATABASE_URL: postgres://bmw:${POSTGRES_PASSWORD:-bmw_dev_password}@postgres:5432/bmw
       REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET:-change-me-in-real-deployments-please-32chars}
-      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:8088}
     ports:
       - "${API_PORT:-4100}:4000"
     command: sh -c "node dist/db/migrate.js && node dist/server.js"
 
+  frontend:
+    build: ./frontend
+    depends_on:
+      - backend
+    ports:
+      - "${WEB_PORT:-8088}:80"
+
+  # Optional long-term memory service. Start with:  docker compose --profile ai up -d
+  # then set HINDSIGHT_URL=http://hindsight:8888 in backend/.env. Hindsight needs its own LLM key to extract memories.
+  hindsight:
+    profiles: ["ai"]
+    image: ghcr.io/vectorize-io/hindsight:latest
+    environment:
+      HINDSIGHT_API_LLM_PROVIDER: ${HINDSIGHT_LLM_PROVIDER:-openai}
+      HINDSIGHT_API_LLM_API_KEY: ${HINDSIGHT_LLM_API_KEY:-}
+    ports:
+      - "${HINDSIGHT_API_PORT:-8888}:8888"
+      - "${HINDSIGHT_UI_PORT:-9999}:9999"
+    volumes:
+      - hindsight-data:/home/hindsight/.pg0
+
 volumes:
   pgdata:
+  hindsight-data:

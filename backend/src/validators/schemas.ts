@@ -136,6 +136,7 @@ export const dashboardQuery = z.object({
   categoryId: z.coerce.number().int().positive().optional(),
   status: z.enum(WASTE_STATUSES).optional(),
 });
+export const opsQuery = z.object({ from: isoDate.optional(), to: isoDate.optional(), facilityId: uuid.optional() });
 export const auditQuery = paginationSchema.extend({
   entity: z.string().max(40).optional(),
   entityId: z.string().max(64).optional(),
@@ -145,3 +146,9 @@ export const auditQuery = paginationSchema.extend({
   to: isoDate.optional(),
 });
 export const usersQuery = z.object({ role: z.enum(ROLES).optional() });
+
+// ---- AI ----
+export const aiChatBody = z.object({
+  message: z.string().trim().min(2, 'Ask a question').max(1000),
+  history: z.array(z.object({ role: z.enum(['user', 'assistant']), text: z.string().max(4000) })).max(12).default([]),
+});

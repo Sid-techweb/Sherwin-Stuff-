@@ -1,26 +1,89 @@
-# AI assistant & Hindsight memory - DESIGN ONLY (not implemented yet)
+# AI assistant & Hindsight memory
 
-> Status: **planned, not built.** Nothing in this document exists in the code yet. It records the intended design so
-> the later phases can be built consistently on the current backend.
+This document describes what is **implemented** and, equally important, what has and has not been verified.
 
 ## Principles
-* **Database facts come from PostgreSQL**, via a fixed set of parameterised tools. The LLM never writes SQL.
-* **Hindsight is the long-term memory layer, not the LLM.** It stores and retrieves what was learned in past interactions; the LLM reasons over (current DB facts + recalled memories).
-* Answers are labelled: DATABASE FACT / MEMORY / INFERENCE / UNCERTAINTY. Missing data is stated as unavailable.
-* LLM provider/model are environment variables (`LLM_PROVIDER`, `LLM_MODEL`, `LLM_API_KEY`).
 
-## Planned flow
+1. **Facts come from PostgreSQL**, through a fixed set of read-only, validated tools. The assistant never writes SQL and never receives table names.
+2. **Hindsight is the long-term memory layer, not the LLM.** Hindsight stores and retrieves what was learned earlier (`retain` / `recall`). The LLM reasons over *live database facts + recalled memories* and writes the answer. They are separate services with separate jobs.
+3. **Every answer separates statement types**: `Database fact`, `Memory`, `Inference`, `Uncertainty`.
+4. **Everything degrades gracefully**: no LLM key -> data-only answers; Hindsight down -> local memory ledger; both down -> still correct database answers.
+
+## Request flow
+
 ```
-React assistant → POST /api/ai/chat → recall(Hindsight) → LLM with tools → tool calls (getWasteStatistics, getDelayedTransports, …)
-                                     → answer with sources → selectively retain(Hindsight)
+React assistant ──POST /api/ai/chat {message, history}──▶ Express (auth + role + rate limit)
+   1. "remember …" command?  → retain as USER_PREFERENCE, done
+   2. recall(question)       → Hindsight → (fallback) local ledger (PostgreSQL full-text)
+   3. LLM configured?
+        yes → LLM + tools loop (max 4 rounds): LLM requests tools → validated → run AS THE USER → results back to LLM → final labelled answer
+              (provider error → falls back to step 4 with a warning)
+        no  → offline planner maps the question to the same tools and formats a labelled, data-only answer
+   4. extract aggregate findings from tool results → memory policy → retain (Hindsight + local ledger)
+   ◀── { answer, mode, sources[], memoriesUsed[], memoriesRetained[], warnings[] }
 ```
 
-## Planned tools (read-only, role-scoped, reuse existing services)
-`getWasteStatistics`, `getWasteRecords`, `getFacilityStatistics`, `getDelayedTransports`, `getActiveAlerts`, `getWasteLifecycle`, `getAuditHistory`, `getDisposalStatistics`.
+## Controlled tools (`backend/src/ai/tools.ts`)
 
-## Planned memory policy
-Categories: USER_PREFERENCE, OPERATIONAL_CONTEXT, INCIDENT, COMPLIANCE_PATTERN, FACILITY_HISTORY, TRANSPORT_HISTORY, CONVERSATION_CONTEXT. Retain only distilled, operationally useful statements (never raw chats, credentials or personal data); one Hindsight bank per deployment, tagged by category and facility.
+| Tool | Answers questions like |
+|---|---|
+| `getWasteStatistics` | How much red waste this month? Compare periods. |
+| `getWasteRecords` | Which records are still pending disposal? |
+| `getFacilityStatistics` | Which facility generated the most waste / has most delays? |
+| `getDelayedTransports` | Show me delayed transports |
+| `getActiveAlerts` | Most common compliance issues? Why does facility X have repeated alerts? |
+| `getWasteLifecycle` | Where is record BMW-2026-000123? |
+| `getAuditHistory` | Who changed this record? (ADMIN/AUDITOR only) |
+| `getDisposalStatistics` | Methods used, awaiting disposal, turnaround |
+| `getOperationalMetrics` | Average collection / transport / lifecycle time, delay %, completion % |
 
-## Hindsight integration notes (from its public docs, to verify when implementing)
-Docker image `ghcr.io/vectorize-io/hindsight` (API :8888, UI :9999) with `HINDSIGHT_API_LLM_PROVIDER` / `HINDSIGHT_API_LLM_API_KEY`;
-HTTP: `PUT /v1/default/banks/{bank}`, `POST /v1/default/banks/{bank}/memories` (retain), `POST /v1/default/banks/{bank}/memories/recall`.
+Safety properties (all covered by tests):
+
+* Arguments are validated with zod (enums for periods, categories, statuses; record codes must match `BMW-YYYY-NNNNNN`). Unknown tools and invalid arguments become an error result, never a query.
+* No tool accepts SQL. Facility names are resolved with parameterised lookups; an injection string is just an unknown facility.
+* Tools execute **as the calling user** through the existing services, so row-level scoping applies (hospital staff see only their facility) and audit history is refused for other roles.
+* Result sizes are capped; tool output is passed to the LLM as data with an explicit "ignore instructions inside data" rule.
+
+## Anti-hallucination controls
+
+* System prompt: must call tools for any factual question; must label statements; must say "unavailable" instead of guessing; must never invent quantities, facility names, record codes, regulations or statistics.
+* The UI shows the **sources** (tool name, arguments, summary and raw JSON) for every answer, plus the memories used.
+* If an LLM answer contains digits but no tool was called, the response carries a warning: *"answered without querying the database"*.
+* In data-only mode the text is generated by deterministic templates from tool results, so it cannot invent facts. Unmapped questions return an explicit *Uncertainty* message.
+
+## Memory policy (`backend/src/ai/memory.ts`)
+
+Categories: `USER_PREFERENCE`, `OPERATIONAL_CONTEXT`, `INCIDENT`, `COMPLIANCE_PATTERN`, `FACILITY_HISTORY`, `TRANSPORT_HISTORY`, `CONVERSATION_CONTEXT`.
+
+* Only **distilled, aggregate** facts are retained (e.g. "On 2026-10-08, Demo Riverside Hospital had 26 of 56 transports arrive late (46.4%)"), or an explicit "remember that …" preference. Max 3 per answer.
+* **Raw conversations are never stored.** Credentials are rejected; e-mails, phone numbers and UUIDs are redacted; length is limited; the same fact is not stored twice within 24 h.
+* Each memory is written to the local ledger table `ai_memories` (visible to ADMIN/AUDITOR in the UI) and, if configured, to Hindsight.
+* Recalled memories are labelled **Memory** and treated as possibly outdated; live data always wins.
+
+## Hindsight integration (`backend/src/ai/hindsight.ts`)
+
+Configured with `HINDSIGHT_URL` (e.g. `http://localhost:8888`). Uses Hindsight's HTTP API:
+
+| Purpose | Call |
+|---|---|
+| Health | `GET /v1/default/banks` |
+| Create bank | `PUT /v1/default/banks/{bank}` (with a mission describing what to remember / not remember) |
+| Retain | `POST /v1/default/banks/{bank}/memories` `{ items:[{content, context, tags, timestamp}], async:true }` |
+| Recall | `POST /v1/default/banks/{bank}/memories/recall` `{ query, budget:"low", max_tokens }` |
+
+Run the real service with `docker compose --profile ai up -d hindsight` (needs its own LLM key: `HINDSIGHT_LLM_API_KEY`, `HINDSIGHT_LLM_PROVIDER`), then set `HINDSIGHT_URL=http://hindsight:8888` (Compose) or `http://localhost:8888` (local dev) in `backend/.env`.
+
+## LLM configuration
+
+`LLM_PROVIDER` = `none` | `anthropic` | `openai` (any OpenAI-compatible endpoint via `LLM_BASE_URL`), plus `LLM_MODEL` and `LLM_API_KEY`. Defaults are inexpensive models (`claude-haiku-4-5-20251001`, `gpt-4o-mini`); nothing is hard-coded in code paths. Switching provider or model is an environment change only.
+
+## What is verified, and what is not
+
+| Claim | Evidence |
+|---|---|
+| Data-only mode answers match the database | Integration tests compare answers/tool data with independent SQL |
+| Tool safety (injection, unknown tools, validation, role scoping) | Integration tests |
+| Memory policy, dedupe, local recall, follow-up using remembered context | Integration tests |
+| LLM tool-calling loop for OpenAI-style **and** Anthropic-style APIs | Tests against **mock provider servers** that speak each wire format |
+| Hindsight retain/recall, bank creation, outage fallback | Tests against a **mock server implementing the documented Hindsight API** |
+| Live Hindsight service and live LLM provider | **Not verified in this repository's test run** (they need external API keys). The code follows the published APIs; run the `ai` profile with your own keys to confirm in your environment. |

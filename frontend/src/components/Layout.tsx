@@ -17,6 +17,8 @@ export const NAV: NavItem[] = [
   { to: '/collections', label: 'Collections', icon: '⛟' },
   { to: '/transport', label: 'Transportation', icon: '➜' },
   { to: '/disposals', label: 'Disposal / treatment', icon: '♻' },
+  { to: '/analytics', label: 'Analytics', icon: '↗', roles: ['ADMIN', 'AUDITOR', 'HOSPITAL_STAFF', 'TREATMENT_OPERATOR'] },
+  { to: '/assistant', label: 'AI assistant', icon: '✦', roles: ['ADMIN', 'AUDITOR', 'HOSPITAL_STAFF', 'TREATMENT_OPERATOR'] },
   { to: '/alerts', label: 'Alerts', icon: '⚠', roles: ['ADMIN', 'HOSPITAL_STAFF', 'TREATMENT_OPERATOR', 'AUDITOR'] },
   { to: '/audit', label: 'Audit logs', icon: '☰', roles: ['ADMIN', 'AUDITOR'] },
   { to: '/facilities', label: 'Facilities & fleet', icon: '⌂' },

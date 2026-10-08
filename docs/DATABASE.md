@@ -34,6 +34,7 @@ facilities ──< users                          waste_categories
 | `disposal_records` | Method, times, certificate | `waste_id` UNIQUE; disposed ≥ treated |
 | `alerts` | type, severity, status, message, linked waste/facility | partial unique `(type, waste_id)` while not RESOLVED |
 | `notifications` | Per-user messages | |
+| `ai_memories` | Memory ledger for the AI assistant (`category`, redacted `text`, `text_hash`, generated `tsvector` + GIN index for full-text recall, `synced_to_hindsight`) | category CHECK (7 allowed values), text length 10-800 |
 | `audit_logs` | Who did what to which entity, JSONB metadata | **trigger blocks UPDATE/DELETE** |
 
 ## Indexes

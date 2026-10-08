@@ -19,21 +19,25 @@ role-based access, alerts for abnormal events, a tamper-resistant audit trail an
 | Redis cache / rate limit / locks (7) | Done |
 | Alerts (12), audit log (13), dashboard analytics endpoint (9, partial 14) | Done in the API |
 | Tests (21) | 50 integration tests passing |
-| **Frontend (8, 9-UI, 10, 25)** | **Not started** |
+| Frontend (8, 9-UI, 10, 11-UI) | Done: React + Vite + TypeScript SPA (dashboard, records, lifecycle stepper, workflows, alerts, audit) |
+| Frontend polish (25) | Partial: skeletons, toasts, confirm dialogs, empty/error states, responsive layout |
 | **Hindsight + AI assistant (15-19)** | **Not started** (design in `docs/AI.md`) |
 | Final report / viva docs (27) | Not started |
 
 ## Tech stack
-Node 22 · Express · TypeScript · PostgreSQL 16 · Redis 7 · zod · JWT + bcrypt · vitest/supertest · Docker Compose.
-(Planned: React + Vite + TypeScript; Hindsight + configurable LLM.)
+React 18 · Vite · TypeScript · Recharts · Node 22 · Express · TypeScript · PostgreSQL 16 · Redis 7 · zod · JWT + bcrypt · vitest/supertest · Docker Compose.
+(Planned: Hindsight + configurable LLM.)
 
 ## Quick start
 ```bash
 docker compose up -d postgres redis
 cd backend && cp .env.example .env && npm install
 npm run migrate && npm run seed
-npm run dev            # http://localhost:4100/api/health
+npm run dev            # API: http://localhost:4100/api/health
 npm test               # 50 tests
+
+# second terminal - the web app
+cd frontend && npm install && npm run dev    # http://localhost:5173
 ```
 Or run the API in Docker too: `docker compose up --build`. Details: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
@@ -63,4 +67,4 @@ See [`backend/.env.example`](backend/.env.example). `JWT_SECRET` must be ≥ 32 
 bcrypt password hashing · JWT re-validated against the DB on every request · server-side RBAC and row-level scoping · zod validation on all input · parameterised SQL with whitelisted sort columns · helmet + CORS allow-list · Redis rate limiting (strict on login) · sanitised 500 errors · append-only audit table enforced by a DB trigger.
 
 ## Known limitations
-No frontend or AI assistant yet · JWT only (no refresh tokens / revocation list beyond deactivating the user) · no email/SMS delivery for notifications · single-instance alert scheduler guarded by a Redis lock only · analytics beyond the dashboard summary (turnaround times, lifecycle durations) not yet exposed.
+No AI assistant yet and no frontend automated tests · JWT only (no refresh tokens / revocation list beyond deactivating the user) · no email/SMS delivery for notifications · single-instance alert scheduler guarded by a Redis lock only · analytics beyond the dashboard summary (turnaround times, lifecycle durations) not yet exposed.

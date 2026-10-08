@@ -38,3 +38,6 @@ Set `DEBUG_ERRORS=1` to print the underlying error for any 500 while debugging.
 2. SQL in a repository, rules in a service (use `withTransaction`, call `audit`, call `invalidateCaches`), thin controller, route with `requireRole`.
 3. zod schema in `validators/schemas.ts`.
 4. Add a test.
+
+## Frontend (`frontend/`)
+`npm install && npm run dev` serves the SPA on http://localhost:5173 and proxies `/api` to the API on :4100 (override with `VITE_API_TARGET`). `npm run build` type-checks and produces `dist/`. Pages: login, dashboard (filters, charts, Redis cache indicator), waste list/detail with lifecycle stepper and role-aware action buttons, collections, transportation, disposal, alerts, audit logs, facilities & fleet, settings/system status. Authorization is always enforced by the API; the UI only hides actions a role cannot use.
